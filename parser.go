@@ -160,6 +160,19 @@ func readIdentifier(node *sitter.Node, sourceCode []byte, ignoreLast bool) strin
 }
 
 func main() {
-    fmt.Println("hi")
+    filePath := os.Args[1]
+
+    fileBytes, err := os.ReadFile(filePath)
+    if err != nil {
+        panic(err)
+    }
+    sourceString := string(fileBytes)
+
+    parser := NewParser()
+    parseResult, errs := parser.Parse(filePath, sourceString)
+    if len(errs) != 0 {
+        fmt.Printf("%+v\n", errs)
+    }
+    fmt.Printf("%+v\n", *parseResult)
 }
 
