@@ -1,4 +1,4 @@
-package parser
+package main
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	treeutils "aspect.build/cli/gazelle/common/treesitter"
 	"github.com/emirpasic/gods/sets/treeset"
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/kotlin"
+	"github.com/smacker/go-tree-sitter/scala"
 )
 
 type ParseResult struct {
@@ -31,7 +31,7 @@ type treeSitterParser struct {
 
 func NewParser() Parser {
 	sitter := sitter.NewParser()
-	sitter.SetLanguage(kotlin.GetLanguage())
+	sitter.SetLanguage(scala.GetLanguage())
 
 	p := treeSitterParser{
 		parser: sitter,
@@ -40,8 +40,8 @@ func NewParser() Parser {
 	return &p
 }
 
-var KotlinTreeSitterName = "kotlin"
-var KotlinLang = kotlin.GetLanguage()
+var ScalaTreeSitterName = "scala"
+var ScalaLang = scala.GetLanguage()
 
 func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error) {
 	var result = &ParseResult{
@@ -102,7 +102,7 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 			}
 		}
 
-		treeErrors := treeutils.QueryErrors(KotlinTreeSitterName, KotlinLang, sourceCode, rootNode)
+		treeErrors := treeutils.QueryErrors(ScalaTreeSitterName, ScalaLang, sourceCode, rootNode)
 		if treeErrors != nil {
 			errs = append(errs, treeErrors...)
 		}
@@ -111,7 +111,7 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 	return result, errs
 }
 
-type KotlinImports struct {
+type ScalaImports struct {
 	imports *treeset.Set
 }
 
@@ -158,3 +158,8 @@ func readIdentifier(node *sitter.Node, sourceCode []byte, ignoreLast bool) strin
 
 	return s.String()
 }
+
+func main() {
+    fmt.Println("hi")
+}
+
