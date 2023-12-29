@@ -63,37 +63,53 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 	if tree != nil {
 		rootNode := tree.RootNode()
 
+    // fmt.Printf("%+v\n", rootNode)
+
 		// Extract imports from the root nodes
 		for i := 0; i < int(rootNode.NamedChildCount()); i++ {
 			nodeI := rootNode.NamedChild(i)
 
-			if nodeI.Type() == "import_list" {
-				for j := 0; j < int(nodeI.NamedChildCount()); j++ {
-					nodeJ := nodeI.NamedChild(j)
-					if nodeJ.Type() == "import_header" {
-						for k := 0; k < int(nodeJ.ChildCount()); k++ {
-							nodeK := nodeJ.Child(k)
-							if nodeK.Type() == "identifier" {
-								isStar := false
-								for l := k + 1; l < int(nodeJ.ChildCount()); l++ {
-									if nodeJ.Child(l).Type() == ".*" {
-										isStar = true
-										break
-									}
-								}
+      fmt.Printf("%s\n", nodeI.Type())
 
-								result.Imports = append(result.Imports, readIdentifier(nodeK, sourceCode, !isStar))
-							}
-						}
-					}
-				}
-			} else if nodeI.Type() == "package_header" {
+			if nodeI.Type() == "package_clause" {
 				if result.Package != "" {
 					fmt.Printf("Multiple package declarations found in %s\n", filePath)
 					os.Exit(1)
 				}
 
-				result.Package = readIdentifier(getLoneChild(nodeI, "identifier"), sourceCode, false)
+				result.Package = readPackageIdentifier(getLoneChild(nodeI, "package_identifier"), sourceCode, false)
+
+			} else if nodeI.Type() == "import_declaration" {
+        fmt.Printf("%+v\n", nodeI)
+
+        // import packages are nested stable_identifiers: ((parent_package), identifier)
+        // e.g. path = (("com", "twitter"), "finagle")
+        // imports := make([]string, 0)
+        path := nodeI.ChildByFieldName("path")
+        importPackage := ""
+        for path != nil {
+            if importPackage != "" {
+              importPackage = "." + importPackage
+            }
+            importPackage = readStableIdentifier(path, sourceCode, false) + importPackage
+            path = getLoneChild(path, "stable_identifier")
+        }
+
+        selectors := getLoneChild(nodeI, "import_selectors")
+        // TODO(jacob): figure out how to do better checks on what type child nodes are
+        if selectors == nil {
+          if getLoneChild(nodeI, "import_wildcard") != nil {
+            result.Imports = append(result.Imports, importPackage + "._")
+          } else {
+            result.Imports = append(result.Imports, importPackage)
+          }
+        } else {
+          symbols := readImportSelectors(selectors, sourceCode)
+          for _, symbol := range(symbols) {
+            result.Imports = append(result.Imports, importPackage + "." + symbol)
+          }
+        }
+
 			} else if nodeI.Type() == "function_declaration" {
 				nodeJ := getLoneChild(nodeI, "simple_identifier")
 				if nodeJ.Content(sourceCode) == "main" {
@@ -122,9 +138,101 @@ func getLoneChild(node *sitter.Node, name string) *sitter.Node {
 		}
 	}
 
-	fmt.Printf("Node %v must contain node of type %q", node, name)
-	os.Exit(1)
+	// fmt.Printf("Node %v must contain node of type %q", node, name)
+	// os.Exit(1)
 	return nil
+}
+
+func readPackageIdentifier(node *sitter.Node, sourceCode []byte, ignoreLast bool) string {
+	if node.Type() != "package_identifier" {
+		fmt.Printf("Must be type 'package_identifier': %v - %s", node.Type(), node.Content(sourceCode))
+		os.Exit(1)
+	}
+
+	var s strings.Builder
+
+	total := int(node.NamedChildCount())
+	if ignoreLast {
+		total = total - 1
+	}
+
+	for c := 0; c < total; c++ {
+		nodeC := node.NamedChild(c)
+
+		// TODO: are there any other node types under an "identifier"
+
+		if nodeC.Type() == "identifier" {
+			if s.Len() > 0 {
+				s.WriteString(".")
+			}
+			s.WriteString(nodeC.Content(sourceCode))
+		} else {
+			fmt.Printf("Unexpected node type '%v' within: %s", nodeC.Type(), node.Content(sourceCode))
+			os.Exit(1)
+		}
+	}
+
+	return s.String()
+}
+
+func readStableIdentifier(node *sitter.Node, sourceCode []byte, ignoreLast bool) string {
+	if node.Type() != "stable_identifier" {
+		fmt.Printf("Must be type 'stable_identifier': %v - %s", node.Type(), node.Content(sourceCode))
+		os.Exit(1)
+	}
+
+	var s strings.Builder
+
+	total := int(node.NamedChildCount())
+	if ignoreLast {
+		total = total - 1
+	}
+
+	for c := 0; c < total; c++ {
+		nodeC := node.NamedChild(c)
+
+		// TODO: are there any other node types under a "stable_identifier"
+
+		if nodeC.Type() == "identifier" {
+			if s.Len() > 0 {
+				s.WriteString(".")
+			}
+			s.WriteString(nodeC.Content(sourceCode))
+		} else if nodeC.Type() != "stable_identifier" {
+			fmt.Printf("Unexpected node type '%v' within: %s", nodeC.Type(), node.Content(sourceCode))
+			os.Exit(1)
+		}
+	}
+
+	return s.String()
+}
+
+func readImportSelectors(node *sitter.Node, sourceCode []byte) []string {
+	if node.Type() != "import_selectors" {
+		fmt.Printf("Must be type 'package_identifier': %v - %s", node.Type(), node.Content(sourceCode))
+		os.Exit(1)
+	}
+
+	total := int(node.NamedChildCount())
+	imports := make([]string, total)
+
+	for c := 0; c < total; c++ {
+		nodeC := node.NamedChild(c)
+
+		// TODO: are there any other node types under an "identifier"
+
+		if nodeC.Type() == "identifier" {
+			imports[c] = nodeC.Content(sourceCode)
+		} else if nodeC.Type() == "renamed_identifier" {
+      // see also: nodeC.ChildByFieldName("alias")
+      imports[c] = nodeC.ChildByFieldName("name").Content(sourceCode)
+    } else {
+			fmt.Printf("Unexpected node type '%v' within: %s", nodeC.Type(), node.Content(sourceCode))
+			os.Exit(1)
+		}
+	}
+
+	return imports
 }
 
 func readIdentifier(node *sitter.Node, sourceCode []byte, ignoreLast bool) string {
