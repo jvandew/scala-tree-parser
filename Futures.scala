@@ -20,6 +20,29 @@ import io.fsq.macros.StackElement
 import java.util.concurrent.{ArrayBlockingQueue, TimeoutException}
 import scala.collection.JavaConverters.asJavaCollectionConverter
 
+type Type = Int
+
+trait Trait {}
+
+abstract class AbstractClass()
+
+case class CaseClass(i: Int)
+
+case object CaseObject
+
+def function(hi: String): Int {
+  5
+}
+
+class FuturesClass(hi: String) {
+}
+
+val value = 5
+
+var variable = 4
+
+lazy val lazyVal = 3
+
 /**
   * Handy helpers for dealing with Futures.
   */

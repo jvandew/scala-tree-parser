@@ -15,6 +15,7 @@ import (
 type ParseResult struct {
 	File    string
 	Imports []string
+  Symbols []string
 	Package string
 	HasMain bool
 }
@@ -47,6 +48,7 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 	var result = &ParseResult{
 		File:    filePath,
 		Imports: make([]string, 0),
+    Symbols: make([]string, 0),
 	}
 
 	errs := make([]error, 0)
@@ -80,11 +82,9 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 				result.Package = readPackageIdentifier(getLoneChild(nodeI, "package_identifier"), sourceCode, false)
 
 			} else if nodeI.Type() == "import_declaration" {
-        fmt.Printf("%+v\n", nodeI)
-
-        // import packages are nested stable_identifiers: ((parent_package), identifier)
-        // e.g. path = (("com", "twitter"), "finagle")
-        // imports := make([]string, 0)
+        // import packages are nested stable_identifiers, with the first two packages in
+        // the innermost tuple: (((identifier, identifier), identifier), identifier)
+        // e.g. path = ((("com", "twitter"), "finagle"), "http")
         path := nodeI.ChildByFieldName("path")
         importPackage := ""
         for path != nil {
@@ -110,12 +110,19 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
           }
         }
 
-			} else if nodeI.Type() == "function_declaration" {
-				nodeJ := getLoneChild(nodeI, "simple_identifier")
-				if nodeJ.Content(sourceCode) == "main" {
-					result.HasMain = true
-				}
-			}
+			} else if (
+        nodeI.Type() == "function_definition" ||
+        nodeI.Type() == "type_definition" ||
+        nodeI.Type() == "class_definition" ||
+        nodeI.Type() == "trait_definition" ||
+        nodeI.Type() == "object_definition") {
+        // TODO(jacob): check visibility modifiers
+        name := nodeI.ChildByFieldName("name")
+        result.Symbols = append(result.Symbols, name.Content(sourceCode))
+
+      } else if nodeI.Type() == "val_definition" || nodeI.Type() == "var_definition" {
+        // TODO(jacob): have to deconstruct pattern matching
+      }
 		}
 
 		treeErrors := treeutils.QueryErrors(ScalaTreeSitterName, ScalaLang, sourceCode, rootNode)
