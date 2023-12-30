@@ -24,6 +24,10 @@ type Parser interface {
 	Parse(filePath, source string) (*ParseResult, []error)
 }
 
+type ScalaImports struct {
+	imports *treeset.Set
+}
+
 type treeSitterParser struct {
 	Parser
 
@@ -65,13 +69,11 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 	if tree != nil {
 		rootNode := tree.RootNode()
 
-    // fmt.Printf("%+v\n", rootNode)
-
 		// Extract imports from the root nodes
 		for i := 0; i < int(rootNode.NamedChildCount()); i++ {
 			nodeI := rootNode.NamedChild(i)
 
-      fmt.Printf("%s\n", nodeI.Type())
+      // fmt.Printf("%s\n", nodeI.Type())
 
 			if nodeI.Type() == "package_clause" {
 				if result.Package != "" {
@@ -110,36 +112,9 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
           }
         }
 
-			} else if (
-        nodeI.Type() == "function_definition" ||
-        nodeI.Type() == "type_definition" ||
-        nodeI.Type() == "class_definition" ||
-        nodeI.Type() == "trait_definition" ||
-        nodeI.Type() == "object_definition") {
-        if hasAccessModifier(nodeI) {
-          // NOTE(jacob): For now, just assume any access modifier means this symbol is
-          //    not exported. Note this is particularly untrue for class constructors.
-          continue
-        }
-
-        name := nodeI.ChildByFieldName("name")
-        result.Symbols = append(result.Symbols, name.Content(sourceCode))
-
-      } else if nodeI.Type() == "val_definition" || nodeI.Type() == "var_definition" {
-        if hasAccessModifier(nodeI) {
-          // NOTE(jacob): For now, just assume any access modifier means this symbol is
-          //    not exported. Note this is particularly untrue for class constructors.
-          continue
-        }
-
-        pattern := nodeI.ChildByFieldName("pattern")
-        if pattern.Type() == "case_class_pattern" {
-          // NOTE(jacob): We could also be binding symbols via pattern case syntax, e.g.
-          //    `val Array(one, two) = Array(1, 2)`. Just ignore this for now.
-          continue
-        }
-
-        result.Symbols = append(result.Symbols, pattern.Content(sourceCode))
+      } else {
+        childSymbols := recursivelyParseSymbols(nodeI, sourceCode, "")
+        result.Symbols = append(result.Symbols, childSymbols...)
       }
 		}
 
@@ -152,8 +127,49 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 	return result, errs
 }
 
-type ScalaImports struct {
-	imports *treeset.Set
+func recursivelyParseSymbols(node *sitter.Node, sourceCode []byte, namespace string) []string {
+  symbols := make([]string, 0)
+
+  if hasAccessModifier(node) {
+    // NOTE(jacob): For now, just assume any access modifier means this symbol is
+    //    not exported. Note this is particularly untrue for class constructors.
+    return symbols
+  }
+
+  if node.Type() == "function_definition" ||
+    node.Type() == "type_definition" ||
+    node.Type() == "class_definition" ||
+    node.Type() == "trait_definition" ||
+    node.Type() == "object_definition" {
+
+    name := node.ChildByFieldName("name")
+    symbol := namespace + name.Content(sourceCode)
+    symbols = append(symbols, symbol)
+
+    if node.Type() == "object_definition" {
+      if body := node.ChildByFieldName("body"); body != nil {
+        for i := 0; i < int(body.NamedChildCount()); i++ {
+          childSymbols := recursivelyParseSymbols(body.NamedChild(i), sourceCode, symbol + ".")
+          symbols = append(symbols, childSymbols...)
+        }
+      }
+    }
+
+  } else if node.Type() == "val_definition" || node.Type() == "var_definition" {
+    pattern := node.ChildByFieldName("pattern")
+    if pattern.Type() == "case_class_pattern" {
+      // NOTE(jacob): We could also be binding symbols via pattern case syntax, e.g.
+      //    `val Array(one, two) = Array(1, 2)`. Just ignore this for now.
+      return symbols
+    }
+
+    symbols = append(symbols, namespace + pattern.Content(sourceCode))
+
+  } else if node.Type() != "comment" {
+    fmt.Printf("Unknown symbol type: %s\n", node.Type())
+  }
+
+  return symbols
 }
 
 func hasAccessModifier(node *sitter.Node) bool {
@@ -162,6 +178,7 @@ func hasAccessModifier(node *sitter.Node) bool {
       return true
     }
   }
+
   return false
 }
 
@@ -172,8 +189,6 @@ func getLoneChild(node *sitter.Node, name string) *sitter.Node {
 		}
 	}
 
-	// fmt.Printf("Node %v must contain node of type %q", node, name)
-	// os.Exit(1)
 	return nil
 }
 
