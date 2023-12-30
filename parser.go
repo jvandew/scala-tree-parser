@@ -116,18 +116,30 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
         nodeI.Type() == "class_definition" ||
         nodeI.Type() == "trait_definition" ||
         nodeI.Type() == "object_definition") {
-        if modifiers := getLoneChild(nodeI, "modifiers"); modifiers != nil {
-          if access_modifier := getLoneChild(modifiers, "access_modifier"); access_modifier != nil {
-            // NOTE(jacob): For now, just assume any access modifier means this symbol is
-            //    not exported. Note this is particularly untrue for class constructors.
-            continue
-          }
+        if hasAccessModifier(nodeI) {
+          // NOTE(jacob): For now, just assume any access modifier means this symbol is
+          //    not exported. Note this is particularly untrue for class constructors.
+          continue
         }
+
         name := nodeI.ChildByFieldName("name")
         result.Symbols = append(result.Symbols, name.Content(sourceCode))
 
       } else if nodeI.Type() == "val_definition" || nodeI.Type() == "var_definition" {
-        // TODO(jacob): have to deconstruct pattern matching
+        if hasAccessModifier(nodeI) {
+          // NOTE(jacob): For now, just assume any access modifier means this symbol is
+          //    not exported. Note this is particularly untrue for class constructors.
+          continue
+        }
+
+        pattern := nodeI.ChildByFieldName("pattern")
+        if pattern.Type() == "case_class_pattern" {
+          // NOTE(jacob): We could also be binding symbols via pattern case syntax, e.g.
+          //    `val Array(one, two) = Array(1, 2)`. Just ignore this for now.
+          continue
+        }
+
+        result.Symbols = append(result.Symbols, pattern.Content(sourceCode))
       }
 		}
 
@@ -142,6 +154,15 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
 
 type ScalaImports struct {
 	imports *treeset.Set
+}
+
+func hasAccessModifier(node *sitter.Node) bool {
+  if modifiers := getLoneChild(node, "modifiers"); modifiers != nil {
+    if access_modifier := getLoneChild(modifiers, "access_modifier"); access_modifier != nil {
+      return true
+    }
+  }
+  return false
 }
 
 func getLoneChild(node *sitter.Node, name string) *sitter.Node {

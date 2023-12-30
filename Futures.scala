@@ -41,6 +41,8 @@ private[this] class PrivateClass(hi: String) {}
 
 val value = 5
 
+val Array(one, two) = Array(1, 2)
+
 var variable = 4
 
 lazy val lazyVal = 3
