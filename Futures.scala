@@ -37,6 +37,8 @@ def function(hi: String): Int {
 class FuturesClass(hi: String) {
 }
 
+private[this] class PrivateClass(hi: String) {}
+
 val value = 5
 
 var variable = 4

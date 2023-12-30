@@ -116,7 +116,13 @@ func (p *treeSitterParser) Parse(filePath, source string) (*ParseResult, []error
         nodeI.Type() == "class_definition" ||
         nodeI.Type() == "trait_definition" ||
         nodeI.Type() == "object_definition") {
-        // TODO(jacob): check visibility modifiers
+        if modifiers := getLoneChild(nodeI, "modifiers"); modifiers != nil {
+          if access_modifier := getLoneChild(modifiers, "access_modifier"); access_modifier != nil {
+            // NOTE(jacob): For now, just assume any access modifier means this symbol is
+            //    not exported. Note this is particularly untrue for class constructors.
+            continue
+          }
+        }
         name := nodeI.ChildByFieldName("name")
         result.Symbols = append(result.Symbols, name.Content(sourceCode))
 
